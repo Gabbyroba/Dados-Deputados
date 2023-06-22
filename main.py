@@ -1,90 +1,114 @@
-from tqdm import tqdm
-import requests
-import json 
-import pandas as pd 
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
 
-# PRIMEIRA REQUISIÇÃO - DADOS DOS DEPUTADOS 
-url = 'https://dadosabertos.camara.leg.br/api/v2/deputados?ordem=ASC&ordenarPor=nome'
-r = requests.get(url, allow_redirects=True)
-data = r.json()
-deputados = data['dados']
-dfr = pd.DataFrame(deputados)
+# Carregar o arquivo de despesas em um DataFrame
+df_despesas = pd.read_excel('despesasdepfinal.xlsx')
+tabela = df_despesas
+dfr_despesas = pd.read_excel('despesasdepfinalcopia.xlsx')
+tabela2 = dfr_despesas
 
-# CRIA LISTAS VAZIAS PARA ARMAZENAR OS DADOS
-despesas_totais = []
-listas2 = []
-listas3 = []
-listas4 = []
-listas5 = []
-listas6 = []
-listas7 = []
+# Armazenar o dataframe em uma variável 
+dftree = pd.DataFrame(tabela)
+df = dftree
 
-# DESPESAS INDIVIDUAIS DE DEPUTADOS POR ID
-for id_deputado in tqdm(deputados, desc='Progresso'):
-    id_deputado = id_deputado['id']
-    page = 1
-    has_next_page = True
+# Exibir informações estatísticas do DataFrame
+tabela.describe()
 
-    # SEGUNDA REQUISIÇÃO - PAGINAÇÃO E BUSCA DE DESPESAS TOTAIS POR ID  
-    while has_next_page:
-        des = f'https://dadosabertos.camara.leg.br/api/v2/deputados/{id_deputado}/despesas?ano=2023&itens=100&pagina={page}'
-        req = requests.get(des, allow_redirects=True)
-        dado = req.json()
-        despesas = dado['dados']
-        despesas_totais.extend(despesas)
-        
-        # ARMAZENA DADOS NAS LISTAS
-        for c in range (1, len(despesas)):    
-            nome = dfr.loc[dfr['id'] == id_deputado, 'nome']
-            sigla_partido = dfr.loc[dfr['id'] == id_deputado, 'siglaPartido']
-            sigla_Uf = dfr.loc[dfr['id'] == id_deputado, 'siglaUf']
-            id_Legislatura = dfr.loc[dfr['id'] == id_deputado, 'idLegislatura']
-            url_Foto = dfr.loc[dfr['id'] == id_deputado, 'urlFoto']
-            email = dfr.loc[dfr['id'] == id_deputado, 'email']
+# Filtrar despesas com valores negativos
+valores_negativos = tabela[tabela['valorLiquido'] < 0]
 
-            listas2.append(nome.tolist())
-            listas3.append(sigla_partido.tolist())
-            listas4.append(sigla_Uf.tolist())
-            listas5.append(id_Legislatura.tolist())
-            listas6.append(url_Foto.tolist())
-            listas7.append(email.tolist())
-        
-        # PERCORRE AS PÁGINAS E ADICIONA + 1, CASO TENHA LINK DE "NEXT PAGE"
-        if 'next' in dado['links']:
-            page += 1
-        else:
-            has_next_page = False
+# Remover linhas específicas do DataFrame
+tabela = tabela.drop(12636, axis='index')
+tabela = tabela.drop(23040, axis='index')
+tabela = tabela.drop(32069, axis='index')
+tabela = tabela.drop(33479, axis='index')
 
-# JUNTA AS LISTAS  
-zipado = list(zip(listas2, listas3, listas4, listas5, listas6, listas7))
+# Plotar o gráfico de barras dos gastos por partido
+plt.bar(tabela['siglaPartido'], tabela['valorLiquido'])
+plt.xlabel('siglaPartido')
+plt.ylabel('valorLiquido')
+plt.title('Gastos por Partido')
+plt.xticks(rotation=90)
+plt.show()
 
-# CRIA OS DATAFRAMES
-dfdep = pd.DataFrame(zipado)
-dfdesp = pd.DataFrame(despesas_totais)
+# Agrupar as despesas por categoria e somar os valores
+agrupadas = tabela[['tipoDespesa', 'valorLiquido']].groupby('tipoDespesa').sum()
 
-# RENOMEIA COLUNAS DO DATAFRAME DFDEP
-dfdep.rename(columns={0: 'nome', 1: 'siglaPartido', 2: 'siglaUF', 
-                      3: 'idLegislatura', 4: 'foto', 5: 'email'}, inplace=True)
+# Truncar os nomes das despesas
+agrupadas.index = [despesa[:10] + '...' if len(despesa) > 10 else despesa for despesa in agrupadas.index]
 
-# RELACIONA OS DATAFRAMES E EXPORTA COMO XLSX (EXCEL)
-dffinal = dfdep.join(dfdesp)
-dffinal.to_excel('despesasdep.xlsx')
+# Plotar o gráfico de barras das despesas por categoria
+agrupadas.plot(kind='bar')
 
-# LÊ A TABELA PARA TRATAR DADOS
-despesasxcel = pd.read_excel('despesasdep.xlsx')
-tabela = despesasxcel
+# Configurar o título e os rótulos dos eixos
+plt.title('Despesas por Categoria')
+plt.xlabel('Categoria')
+plt.ylabel('Valor Total')
 
-# ELIMINA CARACTERES INDESEJADOS
-tabela['nome'] = tabela['nome'].str.strip("[]'")
-tabela['siglaPartido'] = tabela['siglaPartido'].str.strip("[]'")
-tabela['siglaUF'] = tabela['siglaUF'].str.strip("[]'")
-tabela['idLegislatura'] = tabela['idLegislatura'].str.strip("[]'")
-tabela['foto'] = tabela['foto'].str.strip("[]'")
-tabela['email'] = tabela['email'].str.strip("[]'")
+# Rotacionar os rótulos das categorias
+plt.xticks(rotation=45)
 
-# ELIMINA VALORES NULOS E COLUNAS DESNECESSÁRIAS
-tabela = tabela.dropna()
-tabelaf = tabela.drop(columns='Unnamed: 0')
+# Exibir o gráfico
+plt.show()
 
-# SALVA O ARQUIVO FINAL EM XLSX (EXCEL) IGNORANDO O INDEX:
-tabelaf.to_excel('despesasdepfinal.xlsx', index=False)
+# Plotar o histograma interativo dos gastos por sigla de partido usando Plotly
+fig = px.histogram(tabela, x='siglaPartido', color='siglaPartido')
+fig.show()
+
+# Salvar o histograma interativo como um arquivo HTML
+fig.write_html('histogramainterativo.html')
+
+# Agrupar as despesas por tipo e somar os valores
+dados = tabela[['tipoDespesa', 'valorLiquido']].groupby('tipoDespesa').sum().reset_index()
+
+# Ordenar os dados pelo valorLiquido de forma decrescente
+dados = dados.sort_values('valorLiquido', ascending=False)
+
+# Criar o gráfico de barras horizontais
+fig3 = go.Figure(data=go.Bar(
+    x=dados['valorLiquido'],
+    y=dados['tipoDespesa'],
+    orientation='h',
+))
+
+# Configurar o layout do gráfico de barras horizontais
+fig3.update_layout(
+    title='Despesas por Tipo',
+    xaxis_title='Valor Total',
+    yaxis_title='Tipo de Despesa',
+    xaxis_range=[0, max(dados['valorLiquido'])]  # Definir o intervalo do eixo x com base no valor máximo
+)
+
+# Exibir o gráfico de barras horizontais
+fig3.show()
+
+# Calcular a contagem de ocorrência de cada siglaUF
+counts = df['siglaUF'].value_counts()
+
+# Criar um DataFrame com as informações
+df_treemap = pd.DataFrame({'siglaUF': counts.index, 'count': counts.values, 'valorLiquido': counts.values})
+
+# Criar o treemap
+fig2 = go.Figure(go.Treemap(
+    labels=df_treemap['siglaUF'],
+    parents=[""] * len(df_treemap),  # Define todos os nós raiz
+    values=df_treemap['valorLiquido'],
+    text=df_treemap['valorLiquido'].apply(lambda x: f"R${x:.2f}"),  # Adiciona o prefixo "R$" e formata com duas casas decimais
+    textposition="middle center",  # Define a posição do texto no centro da área
+    hovertemplate='<b>%{label}</b> <br> Valor: %{text}',
+))
+
+# Configurar o título
+fig2.update_layout(title='Gastos por UF')
+
+# Exibir o gráfico
+fig2.show()
+
+# Criar o gráfico de histograma por tipo de despesa
+fig4 = px.histogram(tabela2, x='tipoDespesa', color='tipoDespesa')
+
+# Exibir o gráfico
+fig4.show()
